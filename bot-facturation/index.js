@@ -34,7 +34,7 @@ async function getSheetsClient() {
 // ── Helper : récupère le profil d'un agent ─────────────────────────────────────
 async function getAgentProfile(sheets, userId) {
     const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: newSpreadsheetId,
+        spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'PROFILS!A2:I',
     });
     const rows = res.data.values || [];
@@ -237,7 +237,7 @@ client.on('interactionCreate', async interaction => {
                 resource: { data: updates, valueInputOption: 'USER_ENTERED' },
             });
 
-            const lien = `https://docs.google.com/spreadsheets/d/${process.env.SPREADSHEET_ID}/edit`;
+            const lien = `https://docs.google.com/spreadsheets/d/${newSpreadsheetId}/edit`;
             await interaction.editReply(
                 `✅ **Facture ${numFacture} générée !**\n` +
                 `👤 ${agent[1]} | 📅 ${date}\n` +
