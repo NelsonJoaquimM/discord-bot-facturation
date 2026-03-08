@@ -15,9 +15,9 @@ const commands = [
         .setName('facture')
         .setDescription('Génère une facture')
         .addStringOption(opt => opt.setName('numero').setDescription('N° de facture').setRequired(true))
-        .addStringOption(opt => opt.setName('date').setDescription('Date (ex: 08/03/2024)').setRequired(false))
         .addIntegerOption(opt => opt.setName('qte18').setDescription('Nombre de RDV à 18€').setRequired(true))
-        .addIntegerOption(opt => opt.setName('qte23').setDescription('Nombre de RDV à 23€').setRequired(true)),
+        .addIntegerOption(opt => opt.setName('qte23').setDescription('Nombre de RDV à 23€').setRequired(true))
+        .addStringOption(opt => opt.setName('date').setDescription('Date (ex: 08/03/2024)').setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('monprofil')
