@@ -34,7 +34,7 @@ async function getSheetsClient() {
 // ── Helper : récupère le profil d'un agent ─────────────────────────────────────
 async function getAgentProfile(sheets, userId) {
     const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.SPREADSHEET_ID,
+        spreadsheetId: newSpreadsheetId,
         range: 'PROFILS!A2:I',
     });
     const rows = res.data.values || [];
