@@ -185,6 +185,14 @@ client.on('interactionCreate', async interaction => {
             });
             const newId = copie.data.id;
 
+            // Transférer propriété au vrai compte Google
+            const driveClient = google.drive({ version: "v3", auth });
+            await driveClient.permissions.create({
+                fileId: newId,
+                transferOwnership: true,
+                requestBody: { role: "owner", type: "user", emailAddress: process.env.OWNER_EMAIL },
+            });
+
             // Remplir la copie
             const updates = [
                 { range: 'MODELE!B2',  values: [[agent[1] || '']] },
