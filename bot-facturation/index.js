@@ -192,8 +192,7 @@ client.on('interactionCreate', async interaction => {
     // ── /facture ───────────────────────────────────────────────────────────────
     if (interaction.isChatInputCommand() && interaction.commandName === 'facture') {
         console.log('📩 Commande facture reçue !');
-        try { await interaction.deferReply({ flags: 64 }); } catch(e) { console.error('❌ deferReply échoué:', e.message); return; }
-        console.log('✅ deferReply OK');
+        await interaction.reply({ content: '⏳ Génération en cours...', flags: 64 });
 
         const numFacture = interaction.options.getString('numero');
         const date       = interaction.options.getString('date') || new Date().toLocaleDateString('fr-FR');
