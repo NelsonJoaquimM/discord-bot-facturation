@@ -192,7 +192,7 @@ client.on('interactionCreate', async interaction => {
     // ── /facture ───────────────────────────────────────────────────────────────
     if (interaction.isChatInputCommand() && interaction.commandName === 'facture') {
         console.log('📩 Commande facture reçue !');
-        await interaction.deferReply({ ephemeral: true });
+        try { await interaction.deferReply({ flags: 64 }); } catch(e) { return; }
 
         const numFacture = interaction.options.getString('numero');
         const date       = interaction.options.getString('date') || new Date().toLocaleDateString('fr-FR');
