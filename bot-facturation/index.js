@@ -236,6 +236,7 @@ client.on('interactionCreate', async interaction => {
                 { range: newSheet + '!B25', values: [[agent[6] || '']] },
                 { range: newSheet + '!B26', values: [[agent[7] || '']] },
                 { range: newSheet + '!B27', values: [[agent[8] || '']] },
+                { range: newSheet + '!B21', values: [[ligne === 'oui' ? 'Ligne ON/OFF' : '']] },
                 { range: newSheet + '!E21', values: [[ligne === 'oui' ? -49 : '']] },
             ];
 
