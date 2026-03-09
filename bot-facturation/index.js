@@ -254,4 +254,5 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+client.on("error", err => console.error("Client error:", err.message));
 client.login(process.env.DISCORD_TOKEN);
