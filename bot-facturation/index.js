@@ -18,7 +18,8 @@ const commands = [
         .addIntegerOption(opt => opt.setName('qte18').setDescription('Nombre de RDV à 18€').setRequired(true))
         .addIntegerOption(opt => opt.setName('qte23').setDescription('Nombre de RDV à 23€').setRequired(true))
         .addStringOption(opt => opt.setName('date').setDescription('Date (ex: 08/03/2024)').setRequired(false))
-        .addStringOption(opt => opt.setName('ligne').setDescription('Déduire 49€ ligne ON/OFF ?').addChoices({name: 'Oui', value: 'oui'}, {name: 'Non', value: 'non'}).setRequired(false)),
+        .addStringOption(opt => opt.setName('ligne').setDescription('Déduire 49€ ligne ON/OFF ?').addChoices({name: 'Oui', value: 'oui'}, {name: 'Non', value: 'non'}).setRequired(false))
+        .addStringOption(opt => opt.setName('tarif').setDescription('Tarif RDV ligne 19').addChoices({name: '18€', value: '18'}, {name: '17.50€', value: '17.5'}).setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('monprofil')
@@ -200,6 +201,7 @@ client.on('interactionCreate', async interaction => {
         const qte18      = interaction.options.getInteger('qte18');
         const qte23      = interaction.options.getInteger('qte23');
         const ligne      = interaction.options.getString('ligne') || 'non';
+        const tarif      = interaction.options.getString('tarif') || '18';
 
         try {
             const sheets = await getSheetsClient();
@@ -236,6 +238,7 @@ client.on('interactionCreate', async interaction => {
                 { range: newSheet + '!B25', values: [[agent[6] || '']] },
                 { range: newSheet + '!B26', values: [[agent[7] || '']] },
                 { range: newSheet + '!B27', values: [[agent[8] || '']] },
+                { range: newSheet + '!D19', values: [[parseFloat(tarif)]] },
                 { range: newSheet + '!B21', values: [[ligne === 'oui' ? 'Ligne ON/OFF' : '']] },
                 { range: newSheet + '!E21', values: [[ligne === 'oui' ? -49 : '']] },
             ];
