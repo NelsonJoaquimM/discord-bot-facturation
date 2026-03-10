@@ -217,7 +217,7 @@ client.on('interactionCreate', async interaction => {
                 resource: { requests: [{ duplicateSheet: {
                     sourceSheetId: modeleSheet.properties.sheetId,
                     insertSheetIndex: spreadsheet.data.sheets.length,
-                    newSheetName: numFacture + '-' + agent[1].substring(0,10).replace(/ /g,'-') + '-' + new Date().toLocaleDateString('fr-FR', {month:'2-digit', year:'numeric'}).replace('/',''),
+                    newSheetName: numFacture + '-' + agent[1].substring(0,10).replace(/ /g,'-') + '-' + date.split('/').slice(1).join(''),
                 }}]}
             });
             const newSheet = dupRes.data.replies[0].duplicateSheet.properties.title;
