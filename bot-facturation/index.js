@@ -15,12 +15,12 @@ const commands = [
         .setName('facture')
         .setDescription('Génère une facture')
         .addStringOption(opt => opt.setName('numero').setDescription('N° de facture').setRequired(true))
-        .addIntegerOption(opt => opt.setName('qte18').setDescription('Nombre de RDV à 18€').setRequired(true))
-        .addIntegerOption(opt => opt.setName('qte23').setDescription('Nombre de RDV à 23€').setRequired(true))
+        .addIntegerOption(opt => opt.setName('qte1').setDescription('Nombre de RDV ligne 1').setRequired(true))
+        .addStringOption(opt => opt.setName('tarif').setDescription('Tarif ligne 1').addChoices({name: '18€', value: '18'}, {name: '17.50€', value: '17.5'}).setRequired(true))
+        .addIntegerOption(opt => opt.setName('qte50plus').setDescription('Nombre de RDV (si +50 RDV)').setRequired(true))
+        .addStringOption(opt => opt.setName('tarifplus').setDescription('Tarif ligne 2').addChoices({name: '23€', value: '23'}, {name: '22.50€', value: '22.5'}).setRequired(true))
         .addStringOption(opt => opt.setName('date').setDescription('Date (ex: 08/03/2024)').setRequired(false))
-        .addStringOption(opt => opt.setName('ligne').setDescription('Déduire 49€ ligne ON/OFF ?').addChoices({name: 'Oui', value: 'oui'}, {name: 'Non', value: 'non'}).setRequired(false))
-        .addStringOption(opt => opt.setName('tarif').setDescription('Tarif RDV ligne 19').addChoices({name: '18€', value: '18'}, {name: '17.50€', value: '17.5'}).setRequired(true))
-        .addStringOption(opt => opt.setName('tarifplus').setDescription('Tarif RDV ligne 20').addChoices({name: '23€', value: '23'}, {name: '22.50€', value: '22.5'}).setRequired(true)),
+        .addStringOption(opt => opt.setName('ligne').setDescription('Déduire 49€ ligne ON/OFF ?').addChoices({name: 'Oui', value: 'oui'}, {name: 'Non', value: 'non'}).setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('monprofil')
@@ -199,8 +199,8 @@ client.on('interactionCreate', async interaction => {
 
         const numFacture = interaction.options.getString('numero');
         const date       = interaction.options.getString('date') || new Date().toLocaleDateString('fr-FR');
-        const qte18      = interaction.options.getInteger('qte18');
-        const qte23      = interaction.options.getInteger('qte23');
+        const qte18      = interaction.options.getInteger('qte1');
+        const qte50plus3      = interaction.options.getInteger('qte50plus');
         const ligne      = interaction.options.getString('ligne') || 'non';
         const tarif      = interaction.options.getString('tarif');
         const tarifplus    = interaction.options.getString('tarifplus');
@@ -236,7 +236,7 @@ client.on('interactionCreate', async interaction => {
                 { range: newSheet + '!E11', values: [[numFacture]]      },
                 { range: newSheet + '!E12', values: [[date]]            },
                 { range: newSheet + '!C19', values: [[qte18]]           },
-                { range: newSheet + '!C20', values: [[qte23]]           },
+                { range: newSheet + '!C20', values: [[qte50plus3]]           },
                 { range: newSheet + '!B25', values: [[agent[6] || '']] },
                 { range: newSheet + '!B26', values: [[agent[7] || '']] },
                 { range: newSheet + '!B27', values: [[agent[8] || '']] },
