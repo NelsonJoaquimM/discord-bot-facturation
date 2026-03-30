@@ -59,7 +59,7 @@ client.once('ready', async () => {
 // ── Interactions ───────────────────────────────────────────────────────────────
 client.on('interactionCreate', async interaction => {
 
-    // ── /profil → Ouvre un modal en 2 étapes ──────────────────────────────────
+    // ── /profil → Ouvre un modal ───────────────────────────────────────────────
     if (interaction.isChatInputCommand() && interaction.commandName === 'profil') {
         const modal = new ModalBuilder()
             .setCustomId('modal_profil')
@@ -88,7 +88,6 @@ client.on('interactionCreate', async interaction => {
 
     // ── Soumission modal profil étape 1 ───────────────────────────────────────
     if (interaction.isModalSubmit() && interaction.customId === 'modal_profil') {
-        // Stocker temporairement les données dans le customId du 2ème modal
         const nom_societe = interaction.fields.getTextInputValue('nom_societe');
         const adresse     = interaction.fields.getTextInputValue('adresse');
         const ville_cp    = interaction.fields.getTextInputValue('ville_cp');
@@ -118,32 +117,30 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_banque|')) {
         await interaction.deferReply({ ephemeral: true });
 
-        const parts     = interaction.customId.split('|');
-        const nom_societe   = decodeURIComponent(parts[1]);
-        const adresse       = decodeURIComponent(parts[2]);
-        const ville_cp      = decodeURIComponent(parts[3]);
-        const tel           = decodeURIComponent(parts[4]);
-        const email         = decodeURIComponent(parts[5]);
-        const nom_banque    = interaction.fields.getTextInputValue('nom_banque');
+        const parts          = interaction.customId.split('|');
+        const nom_societe    = decodeURIComponent(parts[1]);
+        const adresse        = decodeURIComponent(parts[2]);
+        const ville_cp       = decodeURIComponent(parts[3]);
+        const tel            = decodeURIComponent(parts[4]);
+        const email          = decodeURIComponent(parts[5]);
+        const nom_banque     = interaction.fields.getTextInputValue('nom_banque');
         const adresse_banque = interaction.fields.getTextInputValue('adresse_banque');
-        const rib           = interaction.fields.getTextInputValue('rib');
+        const rib            = interaction.fields.getTextInputValue('rib');
 
         try {
             const sheets = await getSheetsClient();
             const userId = interaction.user.id;
 
-            // Chercher si le profil existe déjà
             const res = await sheets.spreadsheets.values.get({
                 spreadsheetId: process.env.SPREADSHEET_ID,
                 range: 'PROFILS!A2:I',
             });
-            const rows = res.data.values || [];
+            const rows     = res.data.values || [];
             const rowIndex = rows.findIndex(r => r[0] === userId);
 
             const newRow = [userId, nom_societe, adresse, ville_cp, tel, email, nom_banque, adresse_banque, rib];
 
             if (rowIndex === -1) {
-                // Nouveau profil → append
                 await sheets.spreadsheets.values.append({
                     spreadsheetId: process.env.SPREADSHEET_ID,
                     range: 'PROFILS!A2',
@@ -151,7 +148,6 @@ client.on('interactionCreate', async interaction => {
                     resource: { values: [newRow] },
                 });
             } else {
-                // Mise à jour du profil existant
                 await sheets.spreadsheets.values.update({
                     spreadsheetId: process.env.SPREADSHEET_ID,
                     range: `PROFILS!A${rowIndex + 2}`,
@@ -188,6 +184,7 @@ client.on('interactionCreate', async interaction => {
                 `**RIB :** ${agent[8] || '—'}`
             );
         } catch (err) {
+            console.error('ERREUR monprofil:', err.message);
             await interaction.editReply('❌ Erreur. Regarde le terminal.');
         }
     }
@@ -195,15 +192,15 @@ client.on('interactionCreate', async interaction => {
     // ── /facture ───────────────────────────────────────────────────────────────
     if (interaction.isChatInputCommand() && interaction.commandName === 'facture') {
         console.log('📩 Commande facture reçue !');
-        await interaction.reply({ content: '⏳ Génération en cours...', flags: 64 });
+        await interaction.deferReply({ ephemeral: true });
 
         const numFacture = interaction.options.getString('numero');
         const date       = interaction.options.getString('date') || new Date().toLocaleDateString('fr-FR');
         const qte18      = interaction.options.getInteger('qte1');
-        const qte50plus3      = interaction.options.getInteger('qte50plus');
+        const qte50plus3 = interaction.options.getInteger('qte50plus');
         const ligne      = interaction.options.getString('ligne') || 'non';
         const tarif      = interaction.options.getString('tarif');
-        const tarifplus    = interaction.options.getString('tarifplus');
+        const tarifplus  = interaction.options.getString('tarifplus');
 
         try {
             const sheets = await getSheetsClient();
@@ -221,10 +218,10 @@ client.on('interactionCreate', async interaction => {
                 resource: { requests: [{ duplicateSheet: {
                     sourceSheetId: modeleSheet.properties.sheetId,
                     insertSheetIndex: spreadsheet.data.sheets.length,
-                    newSheetName: numFacture + '-' + agent[1].substring(0,10).replace(/ /g,'-') + '-' + date.split('/').slice(1).join('-'),
+                    newSheetName: numFacture + '-' + agent[1].substring(0, 10).replace(/ /g, '-') + '-' + date.split('/').slice(1).join('-'),
                 }}]}
             });
-            const newSheet = dupRes.data.replies[0].duplicateSheet.properties.title;
+            const newSheet   = dupRes.data.replies[0].duplicateSheet.properties.title;
             const newSheetId = dupRes.data.replies[0].duplicateSheet.properties.sheetId;
 
             const updates = [
@@ -236,14 +233,14 @@ client.on('interactionCreate', async interaction => {
                 { range: newSheet + '!E11', values: [[numFacture]]      },
                 { range: newSheet + '!E12', values: [[date]]            },
                 { range: newSheet + '!C19', values: [[qte18]]           },
-                { range: newSheet + '!C20', values: [[qte50plus3]]           },
+                { range: newSheet + '!C20', values: [[qte50plus3]]      },
                 { range: newSheet + '!B25', values: [[agent[6] || '']] },
                 { range: newSheet + '!B26', values: [[agent[7] || '']] },
                 { range: newSheet + '!B27', values: [[agent[8] || '']] },
-                { range: newSheet + '!D19', values: [[parseFloat(tarif)]] },
-                { range: newSheet + '!D20', values: [[parseFloat(tarifplus)]] },
+                { range: newSheet + '!D19', values: [[parseFloat(tarif)]]      },
+                { range: newSheet + '!D20', values: [[parseFloat(tarifplus)]]  },
                 { range: newSheet + '!B21', values: [[ligne === 'oui' ? 'Ligne ON/OFF' : '']] },
-                { range: newSheet + '!E21', values: [[ligne === 'oui' ? -49 : '']] },
+                { range: newSheet + '!E21', values: [[ligne === 'oui' ? -49 : '']]            },
             ];
 
             await sheets.spreadsheets.values.batchUpdate({
@@ -265,5 +262,5 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-client.on("error", err => console.error("Client error:", err.message));
+client.on('error', err => console.error('Client error:', err.message));
 client.login(process.env.DISCORD_TOKEN);
