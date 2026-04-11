@@ -20,28 +20,28 @@ async function genererFacturesAuto() {
   const sheets = google.sheets({ version: 'v4', auth });
   const drive  = google.drive({ version: 'v3', auth });
 
-  // Mois facturé = mois précédent
+  // ── Mois facturé = mois précédent ────────────────────────────────────────────
   const now        = new Date();
   const moisNum    = now.getMonth() === 0 ? 12 : now.getMonth();
   const annee      = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
   const anneeShort = String(annee).slice(2);
   const dateFacture = `08/${String(moisNum).padStart(2,'0')}/${annee}`;
 
-  // Lire PROFILS (A2:L)
+  // ── Lire PROFILS (A2:L) ───────────────────────────────────────────────────────
   const profilsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: 'PROFILS!A2:L',
   });
   const profils = (profilsRes.data.values || []).filter(p => p[11]);
 
-  // Lire STATS
+  // ── Lire STATS ────────────────────────────────────────────────────────────────
   const statsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${STATS_SHEET}!A3:F`,
+    range: `'${STATS_SHEET}'!A3:F`,
   });
   const statsRows = statsRes.data.values || [];
 
-  // Calculer totaux VENU équipe
+  // ── Calculer totaux VENU équipe ───────────────────────────────────────────────
   let totalVenuEquipe = 0;
   let venuHicham      = 0;
 
@@ -55,7 +55,7 @@ async function genererFacturesAuto() {
   }
   const venuSansHicham = totalVenuEquipe - venuHicham;
 
-  // Trouver/créer le dossier Drive du mois
+  // ── Trouver/créer le dossier Drive du mois ───────────────────────────────────
   const nomDossier = `${MONTH_NAMES[moisNum]} ${annee}`;
   const driveRes   = await drive.files.list({
     q: `'${DRIVE_FOLDER_ID}' in parents and name='${nomDossier}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
@@ -72,17 +72,17 @@ async function genererFacturesAuto() {
     dossierMoisId = newFolder.data.id;
   }
 
-  // Récupérer le sheetId du MODELE
+  // ── Récupérer le sheetId du MODELE ───────────────────────────────────────────
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
   const modeleSheet = spreadsheet.data.sheets.find(s => s.properties.title === 'MODELE');
 
-  // Générer une facture par agent
+  // ── Générer une facture par agent ────────────────────────────────────────────
   const resultats = [];
 
   for (const profil of profils) {
-    const nomSdr  = profil[11].trim();
-    const nomSte  = profil[1] || nomSdr;
-    const statRow = statsRows.find(r => r[0] && r[0].trim() === nomSdr);
+    const nomSdr   = profil[11].trim();
+    const nomSte   = profil[1] || nomSdr;
+    const statRow  = statsRows.find(r => r[0] && r[0].trim() === nomSdr);
 
     if (!statRow) {
       resultats.push(`⚠️ **${nomSdr}** — introuvable dans les stats`);
@@ -91,25 +91,27 @@ async function genererFacturesAuto() {
 
     const venu = parseInt(statRow[5]) || 0;
 
-    // Calcul tarifs
+    // ── Calcul tarifs selon profil ──────────────────────────────────────────────
     let qte1 = venu, tarif1 = 17.5;
-    let qte2 = 0,   tarif2 = '';
+    let qte2 = 0,   tarif2 = 0;
     let bonusLabel = '', bonusVal = '';
 
     if (nomSdr === HICHAM_SDR) {
       tarif1     = venu > 50 ? 23 : 18;
       bonusLabel = `Bonus équipe (${totalVenuEquipe} RDV × 0,50€)`;
       bonusVal   = +(totalVenuEquipe * 0.5).toFixed(2);
+
     } else if (nomSdr === JIHANE_SDR) {
       qte1       = 1;
       tarif1     = 150;
       bonusLabel = `Bonus équipe (${venuSansHicham} RDV × 0,50€)`;
       bonusVal   = +(venuSansHicham * 0.5).toFixed(2);
+
     } else {
       tarif1 = venu > 50 ? 22.5 : 17.5;
     }
 
-    // Numéro de facture
+    // ── Numéro de facture ───────────────────────────────────────────────────────
     const suffix     = nomSdr.split(' ').pop().substring(0, 6).toUpperCase();
     const numFacture = `${String(moisNum).padStart(2,'0')}${anneeShort}-${suffix}`;
     const nomOnglet  = `${numFacture}-${nomSte.substring(0,12).replace(/ /g,'-')}`;
@@ -144,7 +146,7 @@ async function genererFacturesAuto() {
             { range: `${newTitle}!C19`, values: [[qte1]]             },
             { range: `${newTitle}!D19`, values: [[tarif1]]           },
             { range: `${newTitle}!C20`, values: [[qte2]]             },
-            { range: `${newTitle}!D20`, values: [[tarif2]]           },
+            { range: `${newTitle}!D20`, values: [[tarif2 || '']]     },
             { range: `${newTitle}!B21`, values: [[bonusLabel]]       },
             { range: `${newTitle}!E21`, values: [[bonusVal || '']]   },
             { range: `${newTitle}!B25`, values: [[profil[6] || '']]  },
