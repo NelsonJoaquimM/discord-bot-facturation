@@ -20,6 +20,10 @@ async function genererFacturesAuto() {
   const sheets = google.sheets({ version: 'v4', auth });
   const drive  = google.drive({ version: 'v3', auth });
 
+  // ── Debug : lister tous les onglets ──────────────────────────────────────────
+  const spreadsheetDebug = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  console.log('ONGLETS DISPONIBLES:', spreadsheetDebug.data.sheets.map(s => s.properties.title));
+
   // ── Mois facturé = mois précédent ────────────────────────────────────────────
   const now         = new Date();
   const moisNum     = now.getMonth() === 0 ? 12 : now.getMonth();
@@ -76,6 +80,11 @@ async function genererFacturesAuto() {
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
   const modeleSheet = spreadsheet.data.sheets.find(s => s.properties.title === 'MODELE');
 
+  // ── Trouver le bon onglet STATS dynamiquement ─────────────────────────────────
+  const statsSheet = spreadsheet.data.sheets.find(s => s.properties.title.includes('STATS'));
+  const statsSheetTitle = statsSheet ? statsSheet.properties.title : STATS_SHEET;
+  console.log('Onglet STATS utilisé:', statsSheetTitle);
+
   // ── Générer une facture par agent ────────────────────────────────────────────
   const resultats = [];
 
@@ -98,13 +107,13 @@ async function genererFacturesAuto() {
 
     if (nomSdr === HICHAM_SDR) {
       tarif1     = venu > 50 ? 23 : 18;
-      bonusLabel = `Bonus équipe (${totalVenuEquipe} RDV x 0,50EUR)`;
+      bonusLabel = `Bonus equipe (${totalVenuEquipe} RDV x 0,50EUR)`;
       bonusVal   = +(totalVenuEquipe * 0.5).toFixed(2);
 
     } else if (nomSdr === JIHANE_SDR) {
       qte1       = 1;
       tarif1     = 150;
-      bonusLabel = `Bonus équipe (${venuSansHicham} RDV x 0,50EUR)`;
+      bonusLabel = `Bonus equipe (${venuSansHicham} RDV x 0,50EUR)`;
       bonusVal   = +(venuSansHicham * 0.5).toFixed(2);
 
     } else {
