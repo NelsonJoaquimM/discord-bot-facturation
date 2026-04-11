@@ -1,7 +1,11 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-const { google } = require('googleapis');
-const { getGoogleAuth } = require('./googleService');
+const { google }              = require('googleapis');
+const { getGoogleAuth }       = require('./googleService');
+const { genererFacturesAuto } = require('./autoFacture');
+const cron                    = require('node-cron');
+
+const NOTIF_CHANNEL_ID = '1480592125673341278';
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -13,7 +17,7 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('facture')
-        .setDescription('Génère une facture')
+        .setDescription('Génère une facture manuellement')
         .addStringOption(opt => opt.setName('numero').setDescription('N° de facture').setRequired(true))
         .addIntegerOption(opt => opt.setName('qte1').setDescription('Nombre de RDV ligne 1').setRequired(true))
         .addStringOption(opt => opt.setName('tarif').setDescription('Tarif ligne 1').addChoices({name: '18€', value: '18'}, {name: '17.50€', value: '17.5'}).setRequired(true))
@@ -26,22 +30,50 @@ const commands = [
         .setName('monprofil')
         .setDescription('Affiche ton profil enregistré'),
 
+    new SlashCommandBuilder()
+        .setName('generer-factures')
+        .setDescription('⚙️ [ADMIN] Déclenche la génération automatique des factures maintenant'),
+
 ].map(c => c.toJSON());
 
-// ── Helper : accès Sheets ──────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 async function getSheetsClient() {
     const auth = await getGoogleAuth();
     return google.sheets({ version: 'v4', auth });
 }
 
-// ── Helper : récupère le profil d'un agent ─────────────────────────────────────
 async function getAgentProfile(sheets, userId) {
     const res = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'PROFILS!A2:I',
+        range: 'PROFILS!A2:L',
     });
     const rows = res.data.values || [];
     return rows.find(row => row[0] === userId) || null;
+}
+
+// ── Notification Discord ───────────────────────────────────────────────────────
+async function envoyerNotifFactures(resultats, nomDossier) {
+    const channel = await client.channels.fetch(NOTIF_CHANNEL_ID);
+    if (!channel) return;
+
+    const ok   = resultats.filter(r => r.startsWith('✅')).length;
+    const err  = resultats.filter(r => r.startsWith('❌')).length;
+    const warn = resultats.filter(r => r.startsWith('⚠️')).length;
+
+    const message =
+        `## 🧾 Génération automatique — ${nomDossier}\n` +
+        `✅ ${ok} factures générées | ❌ ${err} erreurs | ⚠️ ${warn} introuvables\n\n` +
+        resultats.join('\n');
+
+    // Découper si message trop long
+    const chunks = [];
+    let chunk = '';
+    for (const line of message.split('\n')) {
+        if ((chunk + line).length > 1900) { chunks.push(chunk); chunk = ''; }
+        chunk += line + '\n';
+    }
+    if (chunk) chunks.push(chunk);
+    for (const c of chunks) await channel.send(c);
 }
 
 // ── Démarrage ──────────────────────────────────────────────────────────────────
@@ -54,12 +86,25 @@ client.once('ready', async () => {
     } catch (err) {
         console.error('Erreur enregistrement commandes:', err);
     }
+
+    // ── CRON : chaque 8 du mois à 08h00 heure Paris ───────────────────────────
+    cron.schedule('0 8 8 * *', async () => {
+        console.log('⏰ Déclenchement automatique des factures...');
+        try {
+            const { resultats, nomDossier } = await genererFacturesAuto();
+            await envoyerNotifFactures(resultats, nomDossier);
+        } catch (err) {
+            console.error('Erreur cron factures:', err.message);
+        }
+    }, { timezone: 'Europe/Paris' });
+
+    console.log('📅 Cron activé — génération le 8 de chaque mois à 08h00');
 });
 
 // ── Interactions ───────────────────────────────────────────────────────────────
 client.on('interactionCreate', async interaction => {
 
-    // ── /profil → Ouvre un modal ───────────────────────────────────────────────
+    // ── /profil ────────────────────────────────────────────────────────────────
     if (interaction.isChatInputCommand() && interaction.commandName === 'profil') {
         const modal = new ModalBuilder()
             .setCustomId('modal_profil')
@@ -82,7 +127,6 @@ client.on('interactionCreate', async interaction => {
                 new TextInputBuilder().setCustomId('email').setLabel('Email').setStyle(TextInputStyle.Short).setRequired(true)
             ),
         );
-
         await interaction.showModal(modal);
     }
 
@@ -109,7 +153,6 @@ client.on('interactionCreate', async interaction => {
                 new TextInputBuilder().setCustomId('rib').setLabel('RIB / IBAN').setStyle(TextInputStyle.Short).setRequired(true)
             ),
         );
-
         await interaction.showModal(modal2);
     }
 
@@ -131,14 +174,13 @@ client.on('interactionCreate', async interaction => {
             const sheets = await getSheetsClient();
             const userId = interaction.user.id;
 
-            const res = await sheets.spreadsheets.values.get({
+            const res      = await sheets.spreadsheets.values.get({
                 spreadsheetId: process.env.SPREADSHEET_ID,
-                range: 'PROFILS!A2:I',
+                range: 'PROFILS!A2:L',
             });
             const rows     = res.data.values || [];
             const rowIndex = rows.findIndex(r => r[0] === userId);
-
-            const newRow = [userId, nom_societe, adresse, ville_cp, tel, email, nom_banque, adresse_banque, rib];
+            const newRow   = [userId, nom_societe, adresse, ville_cp, tel, email, nom_banque, adresse_banque, rib];
 
             if (rowIndex === -1) {
                 await sheets.spreadsheets.values.append({
@@ -155,7 +197,6 @@ client.on('interactionCreate', async interaction => {
                     resource: { values: [newRow] },
                 });
             }
-
             await interaction.editReply('✅ **Profil sauvegardé !** Utilise `/facture` pour générer une facture.');
         } catch (err) {
             console.error('ERREUR profil:', err.message);
@@ -189,7 +230,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // ── /facture ───────────────────────────────────────────────────────────────
+    // ── /facture (manuel) ──────────────────────────────────────────────────────
     if (interaction.isChatInputCommand() && interaction.commandName === 'facture') {
         console.log('📩 Commande facture reçue !');
         await interaction.deferReply({ ephemeral: true });
@@ -210,42 +251,44 @@ client.on('interactionCreate', async interaction => {
                 return interaction.editReply(`⚠️ Ton profil est introuvable. Lance d'abord \`/profil\`.`);
             }
 
-            // Dupliquer l'onglet MODELE
             const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: process.env.SPREADSHEET_ID });
             const modeleSheet = spreadsheet.data.sheets.find(s => s.properties.title === 'MODELE');
+            const nomOnglet   = numFacture + '-' + agent[1].substring(0, 10).replace(/ /g, '-') + '-' + date.split('/').slice(1).join('-');
+
             const dupRes = await sheets.spreadsheets.batchUpdate({
                 spreadsheetId: process.env.SPREADSHEET_ID,
                 resource: { requests: [{ duplicateSheet: {
-                    sourceSheetId: modeleSheet.properties.sheetId,
+                    sourceSheetId:    modeleSheet.properties.sheetId,
                     insertSheetIndex: spreadsheet.data.sheets.length,
-                    newSheetName: numFacture + '-' + agent[1].substring(0, 10).replace(/ /g, '-') + '-' + date.split('/').slice(1).join('-'),
+                    newSheetName:     nomOnglet,
                 }}]}
             });
             const newSheet   = dupRes.data.replies[0].duplicateSheet.properties.title;
             const newSheetId = dupRes.data.replies[0].duplicateSheet.properties.sheetId;
 
-            const updates = [
-                { range: newSheet + '!B2',  values: [[agent[1] || '']] },
-                { range: newSheet + '!B5',  values: [[agent[2] || '']] },
-                { range: newSheet + '!B6',  values: [[agent[3] || '']] },
-                { range: newSheet + '!B7',  values: [[agent[4] || '']] },
-                { range: newSheet + '!D5',  values: [[agent[5] || '']] },
-                { range: newSheet + '!E11', values: [[numFacture]]      },
-                { range: newSheet + '!E12', values: [[date]]            },
-                { range: newSheet + '!C19', values: [[qte18]]           },
-                { range: newSheet + '!C20', values: [[qte50plus3]]      },
-                { range: newSheet + '!B25', values: [[agent[6] || '']] },
-                { range: newSheet + '!B26', values: [[agent[7] || '']] },
-                { range: newSheet + '!B27', values: [[agent[8] || '']] },
-                { range: newSheet + '!D19', values: [[parseFloat(tarif)]]      },
-                { range: newSheet + '!D20', values: [[parseFloat(tarifplus)]]  },
-                { range: newSheet + '!B21', values: [[ligne === 'oui' ? 'Ligne ON/OFF' : '']] },
-                { range: newSheet + '!E21', values: [[ligne === 'oui' ? -49 : '']]            },
-            ];
-
             await sheets.spreadsheets.values.batchUpdate({
                 spreadsheetId: process.env.SPREADSHEET_ID,
-                resource: { data: updates, valueInputOption: 'USER_ENTERED' },
+                resource: {
+                    valueInputOption: 'USER_ENTERED',
+                    data: [
+                        { range: newSheet + '!B2',  values: [[agent[1] || '']] },
+                        { range: newSheet + '!B5',  values: [[agent[2] || '']] },
+                        { range: newSheet + '!B6',  values: [[agent[3] || '']] },
+                        { range: newSheet + '!B7',  values: [[agent[4] || '']] },
+                        { range: newSheet + '!D5',  values: [[agent[5] || '']] },
+                        { range: newSheet + '!E11', values: [[numFacture]]      },
+                        { range: newSheet + '!E12', values: [[date]]            },
+                        { range: newSheet + '!C19', values: [[qte18]]           },
+                        { range: newSheet + '!D19', values: [[parseFloat(tarif)]]      },
+                        { range: newSheet + '!C20', values: [[qte50plus3]]      },
+                        { range: newSheet + '!D20', values: [[parseFloat(tarifplus)]]  },
+                        { range: newSheet + '!B25', values: [[agent[6] || '']] },
+                        { range: newSheet + '!B26', values: [[agent[7] || '']] },
+                        { range: newSheet + '!B27', values: [[agent[8] || '']] },
+                        { range: newSheet + '!B21', values: [[ligne === 'oui' ? 'Ligne ON/OFF' : '']] },
+                        { range: newSheet + '!E21', values: [[ligne === 'oui' ? -49 : '']]            },
+                    ],
+                },
             });
 
             const lien = `https://docs.google.com/spreadsheets/d/${process.env.SPREADSHEET_ID}/edit#gid=${newSheetId}`;
@@ -254,10 +297,24 @@ client.on('interactionCreate', async interaction => {
                 `👤 ${agent[1]} | 📅 ${date}\n` +
                 `🔗 [Voir la facture](${lien})`
             );
-
         } catch (err) {
             console.error('ERREUR facture:', err.message);
             await interaction.editReply('❌ Erreur lors de la génération. Regarde le terminal.');
+        }
+    }
+
+    // ── /generer-factures (admin) ──────────────────────────────────────────────
+    if (interaction.isChatInputCommand() && interaction.commandName === 'generer-factures') {
+        await interaction.deferReply({ ephemeral: true });
+        await interaction.editReply('⏳ Génération en cours... La notification arrivera dans le salon dédié.');
+
+        try {
+            const { resultats, nomDossier } = await genererFacturesAuto();
+            await envoyerNotifFactures(resultats, nomDossier);
+        } catch (err) {
+            console.error('ERREUR generer-factures:', err.message);
+            const channel = await client.channels.fetch(NOTIF_CHANNEL_ID);
+            if (channel) channel.send(`❌ Erreur génération auto: ${err.message}`);
         }
     }
 });
