@@ -21,10 +21,10 @@ async function genererFacturesAuto() {
   const drive  = google.drive({ version: 'v3', auth });
 
   // ── Mois facturé = mois précédent ────────────────────────────────────────────
-  const now        = new Date();
-  const moisNum    = now.getMonth() === 0 ? 12 : now.getMonth();
-  const annee      = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-  const anneeShort = String(annee).slice(2);
+  const now         = new Date();
+  const moisNum     = now.getMonth() === 0 ? 12 : now.getMonth();
+  const annee       = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const anneeShort  = String(annee).slice(2);
   const dateFacture = `08/${String(moisNum).padStart(2,'0')}/${annee}`;
 
   // ── Lire PROFILS (A2:L) ───────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ async function genererFacturesAuto() {
   // ── Lire STATS ────────────────────────────────────────────────────────────────
   const statsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${STATS_SHEET}'!A3:F`,
+    range: `'${STATS_SHEET}'!A:O`,
   });
   const statsRows = statsRes.data.values || [];
 
@@ -80,9 +80,9 @@ async function genererFacturesAuto() {
   const resultats = [];
 
   for (const profil of profils) {
-    const nomSdr   = profil[11].trim();
-    const nomSte   = profil[1] || nomSdr;
-    const statRow  = statsRows.find(r => r[0] && r[0].trim() === nomSdr);
+    const nomSdr  = profil[11].trim();
+    const nomSte  = profil[1] || nomSdr;
+    const statRow = statsRows.find(r => r[0] && r[0].trim() === nomSdr);
 
     if (!statRow) {
       resultats.push(`⚠️ **${nomSdr}** — introuvable dans les stats`);
@@ -91,27 +91,27 @@ async function genererFacturesAuto() {
 
     const venu = parseInt(statRow[5]) || 0;
 
-    // ── Calcul tarifs selon profil ──────────────────────────────────────────────
+    // ── Calcul tarifs selon profil ────────────────────────────────────────────
     let qte1 = venu, tarif1 = 17.5;
-    let qte2 = 0,   tarif2 = 0;
+    let qte2 = 0,    tarif2 = 0;
     let bonusLabel = '', bonusVal = '';
 
     if (nomSdr === HICHAM_SDR) {
       tarif1     = venu > 50 ? 23 : 18;
-      bonusLabel = `Bonus équipe (${totalVenuEquipe} RDV × 0,50€)`;
+      bonusLabel = `Bonus équipe (${totalVenuEquipe} RDV x 0,50EUR)`;
       bonusVal   = +(totalVenuEquipe * 0.5).toFixed(2);
 
     } else if (nomSdr === JIHANE_SDR) {
       qte1       = 1;
       tarif1     = 150;
-      bonusLabel = `Bonus équipe (${venuSansHicham} RDV × 0,50€)`;
+      bonusLabel = `Bonus équipe (${venuSansHicham} RDV x 0,50EUR)`;
       bonusVal   = +(venuSansHicham * 0.5).toFixed(2);
 
     } else {
       tarif1 = venu > 50 ? 22.5 : 17.5;
     }
 
-    // ── Numéro de facture ───────────────────────────────────────────────────────
+    // ── Numéro de facture ─────────────────────────────────────────────────────
     const suffix     = nomSdr.split(' ').pop().substring(0, 6).toUpperCase();
     const numFacture = `${String(moisNum).padStart(2,'0')}${anneeShort}-${suffix}`;
     const nomOnglet  = `${numFacture}-${nomSte.substring(0,12).replace(/ /g,'-')}`;
