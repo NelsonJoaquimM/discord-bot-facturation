@@ -15,12 +15,16 @@ const MONTH_NAMES = {
   9:'09-SEPTEMBER',10:'10-OCTOBER',11:'11-NOVEMBER',12:'12-DECEMBER'
 };
 
+function nettoyerNom(str) {
+  if (!str) return '';
+  return str.replace(/[^a-zA-ZÀ-ÿ\s'-]/g, '').trim();
+}
+
 async function genererFacturesAuto() {
   const auth   = await getGoogleAuth();
   const sheets = google.sheets({ version: 'v4', auth });
   const drive  = google.drive({ version: 'v3', auth });
 
-  // ── Mois facturé = mois précédent ─────────────────────────────────────────
   const now         = new Date();
   const moisNum     = now.getMonth() === 0 ? 12 : now.getMonth();
   const annee       = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
@@ -28,12 +32,15 @@ async function genererFacturesAuto() {
   const dateFacture = `08/${String(moisNum).padStart(2,'0')}/${annee}`;
 
   // ── Lire PROFILS ──────────────────────────────────────────────────────────
+  // A=ID_DISCORD, B=NOM_SDR, C=NOM_STE, D=ADRESSE, E=VILLE_CP, F=TEL
+  // G=EMAIL, H=BANQUE, I=ADR_BANQUE, J=RIB_IBAN, K=SWIFT, L=ID
   const profilsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: 'PROFILS!A2:L',
   });
-  const profils = (profilsRes.data.values || []).filter(p => p[11]);
+  const profils = (profilsRes.data.values || []).filter(p => p[1]); // col B = NOM_SDR
   console.log(`${profils.length} agents trouvés dans PROFILS`);
+  profils.forEach(p => console.log(`Agent: "${p[1]}" | Société: "${p[2]}"`));
 
   // ── Lire STATS DATA ───────────────────────────────────────────────────────
   const statsRes = await sheets.spreadsheets.values.get({
@@ -48,15 +55,15 @@ async function genererFacturesAuto() {
   let venuHicham      = 0;
 
   for (const profil of profils) {
-    const nomSdr  = profil[11].trim();
-    const statRow = statsRows.find(r => r[0] && r[0].trim() === nomSdr);
+    const nomSdr  = profil[1].trim(); // col B
+    const statRow = statsRows.find(r => r[0] && nettoyerNom(r[0]) === nomSdr);
     if (!statRow) continue;
     const venu = parseInt(statRow[5]) || 0;
     totalVenuEquipe += venu;
     if (nomSdr === HICHAM_SDR) venuHicham = venu;
   }
   const venuSansHicham = totalVenuEquipe - venuHicham;
-  console.log(`Total VENU équipe: ${totalVenuEquipe} | Hicham: ${venuHicham} | Sans Hicham: ${venuSansHicham}`);
+  console.log(`Total VENU: ${totalVenuEquipe} | Hicham: ${venuHicham} | Sans Hicham: ${venuSansHicham}`);
 
   // ── Trouver/créer le dossier Drive du mois ────────────────────────────────
   const nomDossier = `${MONTH_NAMES[moisNum]} ${annee}`;
@@ -84,9 +91,9 @@ async function genererFacturesAuto() {
   const resultats = [];
 
   for (const profil of profils) {
-    const nomSdr  = profil[11].trim();
-    const nomSte  = profil[1] || nomSdr;
-    const statRow = statsRows.find(r => r[0] && r[0].trim() === nomSdr);
+    const nomSdr  = profil[1].trim(); // col B = NOM_SDR
+    const nomSte  = profil[2] || nomSdr; // col C = NOM_STE
+    const statRow = statsRows.find(r => r[0] && nettoyerNom(r[0]) === nomSdr);
 
     if (!statRow) {
       console.log(`⚠️ ${nomSdr} introuvable dans STATS DATA`);
@@ -137,10 +144,10 @@ async function genererFacturesAuto() {
           valueInputOption: 'USER_ENTERED',
           data: [
             { range: `${newTitle}!B2`,  values: [[nomSte]]           },
-            { range: `${newTitle}!B5`,  values: [[profil[2] || '']]  },
-            { range: `${newTitle}!B6`,  values: [[profil[3] || '']]  },
-            { range: `${newTitle}!B7`,  values: [[profil[4] || '']]  },
-            { range: `${newTitle}!D5`,  values: [[profil[5] || '']]  },
+            { range: `${newTitle}!B5`,  values: [[profil[3] || '']]  }, // ADRESSE
+            { range: `${newTitle}!B6`,  values: [[profil[4] || '']]  }, // VILLE_CP
+            { range: `${newTitle}!B7`,  values: [[profil[5] || '']]  }, // TEL
+            { range: `${newTitle}!D5`,  values: [[profil[6] || '']]  }, // EMAIL
             { range: `${newTitle}!E11`, values: [[numFacture]]        },
             { range: `${newTitle}!E12`, values: [[dateFacture]]       },
             { range: `${newTitle}!C19`, values: [[qte1]]             },
@@ -149,9 +156,9 @@ async function genererFacturesAuto() {
             { range: `${newTitle}!D20`, values: [[tarif2 || '']]     },
             { range: `${newTitle}!B21`, values: [[bonusLabel]]       },
             { range: `${newTitle}!E21`, values: [[bonusVal || '']]   },
-            { range: `${newTitle}!B25`, values: [[profil[6] || '']]  },
-            { range: `${newTitle}!B26`, values: [[profil[7] || '']]  },
-            { range: `${newTitle}!B27`, values: [[profil[8] || '']]  },
+            { range: `${newTitle}!B25`, values: [[profil[7] || '']]  }, // BANQUE
+            { range: `${newTitle}!B26`, values: [[profil[8] || '']]  }, // ADR_BANQUE
+            { range: `${newTitle}!B27`, values: [[profil[9] || '']]  }, // RIB_IBAN
           ],
         },
       });
