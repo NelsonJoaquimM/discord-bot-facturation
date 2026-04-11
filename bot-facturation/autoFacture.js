@@ -4,7 +4,6 @@ const { Readable } = require('stream');
 
 const SPREADSHEET_ID  = process.env.SPREADSHEET_ID;
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
-const STATS_SHEET     = 'STATS VROOM NEW';
 
 const HICHAM_SDR = 'Hicham ELMOUSSAID';
 const JIHANE_SDR = 'Jihane ENNACERIE';
@@ -20,32 +19,41 @@ async function genererFacturesAuto() {
   const sheets = google.sheets({ version: 'v4', auth });
   const drive  = google.drive({ version: 'v3', auth });
 
-  // ── Debug : lister tous les onglets ──────────────────────────────────────────
-  const spreadsheetDebug = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
-  console.log('ONGLETS DISPONIBLES:', spreadsheetDebug.data.sheets.map(s => s.properties.title));
+  // ── Trouver automatiquement l'onglet STATS ────────────────────────────────
+  const spreadsheetInfo = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const tousLesOnglets  = spreadsheetInfo.data.sheets.map(s => s.properties.title);
+  console.log('ONGLETS DISPONIBLES:', tousLesOnglets);
 
-  // ── Mois facturé = mois précédent ────────────────────────────────────────────
+  const statsSheetTitle = tousLesOnglets.find(t => t.toUpperCase().includes('STATS'));
+  if (!statsSheetTitle) throw new Error('Onglet STATS introuvable ! Onglets: ' + tousLesOnglets.join(', '));
+  console.log('Onglet STATS trouvé:', statsSheetTitle);
+
+  // ── Mois facturé = mois précédent ─────────────────────────────────────────
   const now         = new Date();
   const moisNum     = now.getMonth() === 0 ? 12 : now.getMonth();
   const annee       = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
   const anneeShort  = String(annee).slice(2);
   const dateFacture = `08/${String(moisNum).padStart(2,'0')}/${annee}`;
 
-  // ── Lire PROFILS (A2:L) ───────────────────────────────────────────────────────
+  // ── Lire PROFILS ──────────────────────────────────────────────────────────
   const profilsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: 'PROFILS!A2:L',
   });
   const profils = (profilsRes.data.values || []).filter(p => p[11]);
 
-  // ── Lire STATS ────────────────────────────────────────────────────────────────
+  // ── Lire STATS via sheetId ────────────────────────────────────────────────
+  const statsSheet   = spreadsheetInfo.data.sheets.find(s => s.properties.title === statsSheetTitle);
+  const statsSheetId = statsSheet.properties.sheetId;
+
   const statsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${STATS_SHEET}'!A:O`,
+    range: `${statsSheetTitle}!A:O`,
   });
   const statsRows = statsRes.data.values || [];
+  console.log('Nombre de lignes STATS lues:', statsRows.length);
 
-  // ── Calculer totaux VENU équipe ───────────────────────────────────────────────
+  // ── Calculer totaux VENU équipe ───────────────────────────────────────────
   let totalVenuEquipe = 0;
   let venuHicham      = 0;
 
@@ -59,7 +67,7 @@ async function genererFacturesAuto() {
   }
   const venuSansHicham = totalVenuEquipe - venuHicham;
 
-  // ── Trouver/créer le dossier Drive du mois ───────────────────────────────────
+  // ── Trouver/créer le dossier Drive du mois ────────────────────────────────
   const nomDossier = `${MONTH_NAMES[moisNum]} ${annee}`;
   const driveRes   = await drive.files.list({
     q: `'${DRIVE_FOLDER_ID}' in parents and name='${nomDossier}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
@@ -76,16 +84,10 @@ async function genererFacturesAuto() {
     dossierMoisId = newFolder.data.id;
   }
 
-  // ── Récupérer le sheetId du MODELE ───────────────────────────────────────────
-  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
-  const modeleSheet = spreadsheet.data.sheets.find(s => s.properties.title === 'MODELE');
+  // ── Récupérer le sheetId du MODELE ────────────────────────────────────────
+  const modeleSheet = spreadsheetInfo.data.sheets.find(s => s.properties.title === 'MODELE');
 
-  // ── Trouver le bon onglet STATS dynamiquement ─────────────────────────────────
-  const statsSheet = spreadsheet.data.sheets.find(s => s.properties.title.includes('STATS'));
-  const statsSheetTitle = statsSheet ? statsSheet.properties.title : STATS_SHEET;
-  console.log('Onglet STATS utilisé:', statsSheetTitle);
-
-  // ── Générer une facture par agent ────────────────────────────────────────────
+  // ── Générer une facture par agent ─────────────────────────────────────────
   const resultats = [];
 
   for (const profil of profils) {
@@ -100,7 +102,6 @@ async function genererFacturesAuto() {
 
     const venu = parseInt(statRow[5]) || 0;
 
-    // ── Calcul tarifs selon profil ────────────────────────────────────────────
     let qte1 = venu, tarif1 = 17.5;
     let qte2 = 0,    tarif2 = 0;
     let bonusLabel = '', bonusVal = '';
@@ -109,24 +110,20 @@ async function genererFacturesAuto() {
       tarif1     = venu > 50 ? 23 : 18;
       bonusLabel = `Bonus equipe (${totalVenuEquipe} RDV x 0,50EUR)`;
       bonusVal   = +(totalVenuEquipe * 0.5).toFixed(2);
-
     } else if (nomSdr === JIHANE_SDR) {
       qte1       = 1;
       tarif1     = 150;
       bonusLabel = `Bonus equipe (${venuSansHicham} RDV x 0,50EUR)`;
       bonusVal   = +(venuSansHicham * 0.5).toFixed(2);
-
     } else {
       tarif1 = venu > 50 ? 22.5 : 17.5;
     }
 
-    // ── Numéro de facture ─────────────────────────────────────────────────────
     const suffix     = nomSdr.split(' ').pop().substring(0, 6).toUpperCase();
     const numFacture = `${String(moisNum).padStart(2,'0')}${anneeShort}-${suffix}`;
     const nomOnglet  = `${numFacture}-${nomSte.substring(0,12).replace(/ /g,'-')}`;
 
     try {
-      // Dupliquer MODELE
       const totalSheets = (await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID })).data.sheets.length;
       const dupRes = await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
@@ -139,7 +136,6 @@ async function genererFacturesAuto() {
       const newTitle   = dupRes.data.replies[0].duplicateSheet.properties.title;
       const newSheetId = dupRes.data.replies[0].duplicateSheet.properties.sheetId;
 
-      // Remplir les cellules
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         resource: {
@@ -165,14 +161,12 @@ async function genererFacturesAuto() {
         },
       });
 
-      // Exporter en PDF
       const token   = (await auth.getAccessToken()).token;
       const pdfUrl  = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=pdf&gid=${newSheetId}&portrait=true&fitw=true&size=A4`;
       const fetch   = (...args) => import('node-fetch').then(m => m.default(...args));
       const pdfResp = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${token}` } });
       const pdfBuf  = Buffer.from(await pdfResp.arrayBuffer());
 
-      // Upload PDF dans Drive
       await drive.files.create({
         requestBody: {
           name:    `${numFacture}_${nomSte.replace(/ /g,'-')}.pdf`,
