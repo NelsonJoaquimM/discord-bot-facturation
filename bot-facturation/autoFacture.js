@@ -1,9 +1,7 @@
 const { google } = require('googleapis');
 const { getGoogleAuth } = require('./googleService');
-const { Readable } = require('stream');
 
 const SPREADSHEET_ID  = process.env.SPREADSHEET_ID;
-const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 const STATS_SHEET     = 'STATS DATA';
 
 const HICHAM_SDR = 'Hicham ELMOUSSAID';
@@ -23,22 +21,20 @@ function nettoyerNom(str) {
 async function genererFacturesAuto() {
   const auth   = await getGoogleAuth();
   const sheets = google.sheets({ version: 'v4', auth });
-  const drive  = google.drive({ version: 'v3', auth });
 
   const now         = new Date();
   const moisNum     = now.getMonth() === 0 ? 12 : now.getMonth();
   const annee       = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
   const anneeShort  = String(annee).slice(2);
   const dateFacture = `08/${String(moisNum).padStart(2,'0')}/${annee}`;
+  const nomDossier  = `${MONTH_NAMES[moisNum]} ${annee}`;
 
   // ── Lire PROFILS ──────────────────────────────────────────────────────────
-  // A=ID_DISCORD, B=NOM_SDR, C=NOM_STE, D=ADRESSE, E=VILLE_CP, F=TEL
-  // G=EMAIL, H=BANQUE, I=ADR_BANQUE, J=RIB_IBAN, K=SWIFT, L=ID
   const profilsRes = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: 'PROFILS!A2:L',
   });
-  const profils = (profilsRes.data.values || []).filter(p => p[1]); // col B = NOM_SDR
+  const profils = (profilsRes.data.values || []).filter(p => p[1]);
   console.log(`${profils.length} agents trouvés dans PROFILS`);
   profils.forEach(p => console.log(`Agent: "${p[1]}" | Société: "${p[2]}"`));
 
@@ -55,7 +51,7 @@ async function genererFacturesAuto() {
   let venuHicham      = 0;
 
   for (const profil of profils) {
-    const nomSdr  = profil[1].trim(); // col B
+    const nomSdr  = profil[1].trim();
     const statRow = statsRows.find(r => r[0] && nettoyerNom(r[0]) === nomSdr);
     if (!statRow) continue;
     const venu = parseInt(statRow[5]) || 0;
@@ -65,24 +61,6 @@ async function genererFacturesAuto() {
   const venuSansHicham = totalVenuEquipe - venuHicham;
   console.log(`Total VENU: ${totalVenuEquipe} | Hicham: ${venuHicham} | Sans Hicham: ${venuSansHicham}`);
 
-  // ── Trouver/créer le dossier Drive du mois ────────────────────────────────
-  const nomDossier = `${MONTH_NAMES[moisNum]} ${annee}`;
-  const driveRes   = await drive.files.list({
-    q: `'${DRIVE_FOLDER_ID}' in parents and name='${nomDossier}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id,name)',
-  });
-  let dossierMoisId;
-  if (driveRes.data.files.length > 0) {
-    dossierMoisId = driveRes.data.files[0].id;
-  } else {
-    const newFolder = await drive.files.create({
-      resource: { name: nomDossier, mimeType: 'application/vnd.google-apps.folder', parents: [DRIVE_FOLDER_ID] },
-      fields: 'id',
-    });
-    dossierMoisId = newFolder.data.id;
-  }
-  console.log(`Dossier Drive: ${nomDossier}`);
-
   // ── Récupérer le sheetId du MODELE ────────────────────────────────────────
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
   const modeleSheet = spreadsheet.data.sheets.find(s => s.properties.title === 'MODELE');
@@ -91,8 +69,8 @@ async function genererFacturesAuto() {
   const resultats = [];
 
   for (const profil of profils) {
-    const nomSdr  = profil[1].trim(); // col B = NOM_SDR
-    const nomSte  = profil[2] || nomSdr; // col C = NOM_STE
+    const nomSdr  = profil[1].trim();
+    const nomSte  = profil[2] || nomSdr;
     const statRow = statsRows.find(r => r[0] && nettoyerNom(r[0]) === nomSdr);
 
     if (!statRow) {
@@ -123,7 +101,8 @@ async function genererFacturesAuto() {
 
     const suffix     = nomSdr.split(' ').pop().substring(0, 6).toUpperCase();
     const numFacture = `${String(moisNum).padStart(2,'0')}${anneeShort}-${suffix}`;
-    const nomOnglet  = `${numFacture}-${nomSte.substring(0,12).replace(/ /g,'-')}`;
+    const timestamp  = Date.now().toString().slice(-4);
+    const nomOnglet  = `${numFacture}-${nomSte.substring(0,10).replace(/ /g,'-')}-${timestamp}`;
 
     try {
       const totalSheets = (await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID })).data.sheets.length;
@@ -144,10 +123,10 @@ async function genererFacturesAuto() {
           valueInputOption: 'USER_ENTERED',
           data: [
             { range: `${newTitle}!B2`,  values: [[nomSte]]           },
-            { range: `${newTitle}!B5`,  values: [[profil[3] || '']]  }, // ADRESSE
-            { range: `${newTitle}!B6`,  values: [[profil[4] || '']]  }, // VILLE_CP
-            { range: `${newTitle}!B7`,  values: [[profil[5] || '']]  }, // TEL
-            { range: `${newTitle}!D5`,  values: [[profil[6] || '']]  }, // EMAIL
+            { range: `${newTitle}!B5`,  values: [[profil[3] || '']]  },
+            { range: `${newTitle}!B6`,  values: [[profil[4] || '']]  },
+            { range: `${newTitle}!B7`,  values: [[profil[5] || '']]  },
+            { range: `${newTitle}!D5`,  values: [[profil[6] || '']]  },
             { range: `${newTitle}!E11`, values: [[numFacture]]        },
             { range: `${newTitle}!E12`, values: [[dateFacture]]       },
             { range: `${newTitle}!C19`, values: [[qte1]]             },
@@ -156,32 +135,15 @@ async function genererFacturesAuto() {
             { range: `${newTitle}!D20`, values: [[tarif2 || '']]     },
             { range: `${newTitle}!B21`, values: [[bonusLabel]]       },
             { range: `${newTitle}!E21`, values: [[bonusVal || '']]   },
-            { range: `${newTitle}!B25`, values: [[profil[7] || '']]  }, // BANQUE
-            { range: `${newTitle}!B26`, values: [[profil[8] || '']]  }, // ADR_BANQUE
-            { range: `${newTitle}!B27`, values: [[profil[9] || '']]  }, // RIB_IBAN
+            { range: `${newTitle}!B25`, values: [[profil[7] || '']]  },
+            { range: `${newTitle}!B26`, values: [[profil[8] || '']]  },
+            { range: `${newTitle}!B27`, values: [[profil[9] || '']]  },
           ],
         },
       });
 
-      const token   = (await auth.getAccessToken()).token;
-      const pdfUrl  = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=pdf&gid=${newSheetId}&portrait=true&fitw=true&size=A4`;
-      const fetch   = (...args) => import('node-fetch').then(m => m.default(...args));
-      const pdfResp = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${token}` } });
-      const pdfBuf  = Buffer.from(await pdfResp.arrayBuffer());
-
-      await drive.files.create({
-        requestBody: {
-          name:    `${numFacture}_${nomSte.replace(/ /g,'-')}.pdf`,
-          parents: [dossierMoisId],
-        },
-        media: {
-          mimeType: 'application/pdf',
-          body:     Readable.from(pdfBuf),
-        },
-        fields: 'id',
-      });
-
-      resultats.push(`✅ **${nomSdr}** — ${venu} RDV — Facture \`${numFacture}\` générée`);
+      const lien = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${newSheetId}`;
+      resultats.push(`✅ **${nomSdr}** — ${venu} RDV — [Facture ${numFacture}](${lien})`);
 
     } catch (err) {
       console.error(`Erreur ${nomSdr}:`, err.message);
@@ -189,7 +151,7 @@ async function genererFacturesAuto() {
     }
   }
 
-  return { resultats, nomDossier, dossierMoisId };
+  return { resultats, nomDossier };
 }
 
 module.exports = { genererFacturesAuto };
